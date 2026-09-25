@@ -592,9 +592,21 @@ export const FoodieSceneStoryboardTimeline = ({
                 {videoId ? (
                   <iframe
                     key={`hook-yt-${videoId}-${hook.startTime}-${hookPreviewKey}`}
-                    src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(hook.startTime)}&autoplay=${isPlayingHookPreview ? 1 : 0}&controls=1&modestbranding=1&rel=0&playsinline=1`}
+                    src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(hook.startTime)}&autoplay=${isPlayingHookPreview ? 1 : 0}&controls=1&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&iv_load_policy=3&cc_load_policy=0&cc_lang_pref=off&hl=es&disablekb=1&fs=0`}
                     title="Hook Preview"
-                    allow="autoplay; encrypted-media; picture-in-picture"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    onLoad={(e) => {
+                      try {
+                        const win = e?.target?.contentWindow;
+                        if (win) {
+                          win.postMessage('{"event":"command","func":"unloadModule","args":["captions"]}', '*');
+                          win.postMessage('{"event":"command","func":"setOption","args":["captions","track",{}]}', '*');
+                          win.postMessage('{"event":"command","func":"setOption","args":["captions","fontSize",-3]}', '*');
+                          win.postMessage('{"event":"command","func":"setOption","args":["captions","displaySettings",{"color":"transparent","backgroundOpacity":0,"textOpacity":0}]}', '*');
+                          win.postMessage('{"event":"command","func":"setOption","args":["cc","track",{}]}', '*');
+                        }
+                      } catch (_) {}
+                    }}
                     className="w-full h-full border-none"
                   />
                 ) : (
@@ -1009,9 +1021,21 @@ export const FoodieSceneStoryboardTimeline = ({
                       {videoId ? (
                         <iframe
                           key={`clip-yt-${idx}-${clip.id || idx}-${clip.startTime}-${clipPreviewKey}`}
-                          src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(clip.startTime)}&autoplay=${playingClipIdx === idx ? 1 : 0}&controls=1&modestbranding=1&rel=0&playsinline=1`}
+                          src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(clip.startTime)}&autoplay=${playingClipIdx === idx ? 1 : 0}&controls=1&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&iv_load_policy=3&cc_load_policy=0&cc_lang_pref=off&hl=es&disablekb=1&fs=0`}
                           title={`Clip ${idx + 1} Preview`}
-                          allow="autoplay; encrypted-media; picture-in-picture"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          onLoad={(e) => {
+                            try {
+                              const win = e?.target?.contentWindow;
+                              if (win) {
+                                win.postMessage('{"event":"command","func":"unloadModule","args":["captions"]}', '*');
+                                win.postMessage('{"event":"command","func":"setOption","args":["captions","track",{}]}', '*');
+                                win.postMessage('{"event":"command","func":"setOption","args":["captions","fontSize",-3]}', '*');
+                                win.postMessage('{"event":"command","func":"setOption","args":["captions","displaySettings",{"color":"transparent","backgroundOpacity":0,"textOpacity":0}]}', '*');
+                                win.postMessage('{"event":"command","func":"setOption","args":["cc","track",{}]}', '*');
+                              }
+                            } catch (_) {}
+                          }}
                           className="w-full h-full border-none"
                         />
                       ) : (

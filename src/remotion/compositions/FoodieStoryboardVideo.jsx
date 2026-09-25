@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   AbsoluteFill,
   useCurrentFrame,
@@ -82,6 +82,89 @@ export const DEFAULT_FOODIE_REVIEWS = [
     sentiment: "negative"
   }
 ];
+
+/**
+ * Componente de reproducción de YouTube ultra-optimizado:
+ * - Desactiva al 100% los subtítulos automáticos de YouTube (unloadModule, clear track, displaySettings transparent)
+ * - CERO icono de reproducción / fin en el centro (sin parámetro &end)
+ * - Soporte para pre-buffer silencioso (mute=1) y activación sin cortes ni fotogramas negros
+ */
+const YouTubeClipPlayer = ({
+  videoId,
+  startTime = 0,
+  isMuted = false,
+  style = {},
+  className = '',
+  title = 'Clip YouTube',
+}) => {
+  const iframeRef = useRef(null);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const killCaptionsAndSyncAudio = () => {
+      try {
+        const win = iframe.contentWindow;
+        if (!win) return;
+
+        // 1. Desactivar y descargar módulo de subtítulos de YouTube
+        win.postMessage('{"event":"command","func":"unloadModule","args":["captions"]}', '*');
+        win.postMessage('{"event":"command","func":"setOption","args":["captions","track",{}]}', '*');
+        win.postMessage('{"event":"command","func":"setOption","args":["captions","fontSize",-3]}', '*');
+        win.postMessage('{"event":"command","func":"setOption","args":["captions","reload",false]}', '*');
+        win.postMessage('{"event":"command","func":"setOption","args":["captions","displaySettings",{"color":"transparent","backgroundOpacity":0,"textOpacity":0}]}', '*');
+        win.postMessage('{"event":"command","func":"setOption","args":["cc","track",{}]}', '*');
+
+        // 2. Control preciso de audio
+        if (isMuted) {
+          win.postMessage('{"event":"command","func":"mute","args":[]}', '*');
+        } else {
+          win.postMessage('{"event":"command","func":"unMute","args":[]}', '*');
+          win.postMessage('{"event":"command","func":"setVolume","args":[100]}', '*');
+          win.postMessage('{"event":"command","func":"playVideo","args":[]}', '*');
+        }
+      } catch (_) {}
+    };
+
+    // Ejecución inmediata y múltiples reintentos para sincronizar cuando YouTube esté listo
+    killCaptionsAndSyncAudio();
+    const timers = [100, 300, 600, 1000, 1600, 2400, 3200].map(delay =>
+      setTimeout(killCaptionsAndSyncAudio, delay)
+    );
+
+    // Escuchar eventos internos de YouTube para apagar subtítulos en cuanto arranca el vídeo
+    const onMessage = (e) => {
+      try {
+        const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (d?.event === 'onStateChange' || d?.info === 1 || d?.event === 'initialDelivery') {
+          killCaptionsAndSyncAudio();
+        }
+      } catch (_) {}
+    };
+
+    window.addEventListener('message', onMessage);
+
+    return () => {
+      timers.forEach(clearTimeout);
+      window.removeEventListener('message', onMessage);
+    };
+  }, [videoId, startTime, isMuted]);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(startTime || 0)}&autoplay=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&iv_load_policy=3&cc_load_policy=0&cc_lang_pref=off&hl=es&disablekb=1&fs=0`}
+      title={title}
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      style={{
+        border: 'none',
+        ...style,
+      }}
+      className={className}
+    />
+  );
+};
 
 export const FoodieStoryboardVideo = ({
   videoId = "dQw4w9WgXcQ",
@@ -269,45 +352,23 @@ export const FoodieStoryboardVideo = ({
                     position: 'absolute',
                     inset: 0,
                     background: 'linear-gradient(180deg, #18181B 0%, #09090B 100%)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
                     zIndex: 1,
                   }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      backgroundColor: 'rgba(220, 38, 38, 0.15)',
-                      border: '1px solid rgba(220, 38, 38, 0.3)',
-                      padding: '10px 20px',
-                      borderRadius: '999px',
-                    }}
-                  >
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#DC2626' }} />
-                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#F87171', letterSpacing: '1px' }}>
-                      CLIP ORIGINAL HOOK
-                    </span>
-                  </div>
-                </div>
+                />
 
                 {videoId && s1Frame < scene1DurationFrames ? (
-                  <iframe
-                    key={`hook-yt-iframe-${videoId}-${hook?.startTime}`}
-                    src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(hook?.startTime || 0)}&autoplay=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&iv_load_policy=3`}
+                  <YouTubeClipPlayer
+                    key={`hook-yt-player-${videoId}-${hook?.startTime}`}
+                    videoId={videoId}
+                    startTime={hook?.startTime || 0}
+                    isMuted={false}
                     title="Hook Clip"
-                    allow="autoplay; encrypted-media; picture-in-picture"
                     style={{
                       position: 'absolute',
                       inset: 0,
                       width: '100%',
                       height: '100%',
-                      border: 'none',
                       zIndex: 2,
-                      objectFit: 'cover',
                     }}
                   />
                 ) : resolvedVideoSrc ? (
@@ -327,13 +388,13 @@ export const FoodieStoryboardVideo = ({
                   />
                 ) : null}
 
-                {/* Subtle vignette for vertical format so text pops */}
+                {/* Subtle vignette for vertical format so text pops and bottom edge is protected */}
                 {isVertical && (
                   <div
                     style={{
                       position: 'absolute',
                       inset: 0,
-                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.1) 25%, rgba(0,0,0,0.2) 75%, rgba(0,0,0,0.85) 100%)',
+                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.02) 20%, rgba(0,0,0,0.02) 75%, rgba(0,0,0,0.92) 100%)',
                       pointerEvents: 'none',
                       zIndex: 3,
                     }}
@@ -385,34 +446,6 @@ export const FoodieStoryboardVideo = ({
                       9:16 VERTICAL
                     </span>
                   )}
-                </div>
-              </div>
-
-              {/* BOTTOM INFO BAR: Creator & Restaurant Context */}
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '70px',
-                  left: '40px',
-                  right: '40px',
-                  background: 'rgba(10, 10, 12, 0.88)',
-                  backdropFilter: 'blur(14px)',
-                  border: '1.5px solid rgba(255, 255, 255, 0.15)',
-                  padding: '24px 30px',
-                  borderRadius: '24px',
-                  zIndex: 30,
-                  boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', color: '#EF4444', fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase' }}>
-                      VÍDEO DE AUDITORÍA FOODIE FAKE
-                    </div>
-                    <div style={{ fontSize: '26px', fontWeight: 900, color: '#FFFFFF', marginTop: '4px' }}>
-                      {restaurantName} · <span style={{ color: '#FBBF24' }}>@{channelName}</span>
-                    </div>
-                  </div>
                 </div>
               </div>
 
@@ -591,18 +624,15 @@ export const FoodieStoryboardVideo = ({
 
       {/* ========================================================
           SCENE 3: SELECTOR DE CLIPS DE MOMENTOS POLÉMICOS
-          - Formato 9:16 Vertical Completo o 16:9 Horizontal
-          - Transiciones fluidas entre clips: Glitch+Flash, Zoom Explosivo o Corte Seco
-          - CERO pantallazo negro: buffer visual continuo
+          - Pre-montado 35 frames antes para carga y buffer silencioso (CERO pantalla negra)
+          - Transición 100% fluida entre momentos con pre-buffer silencioso del siguiente clip
+          - CERO fuga de audio: clips inactivos silenciados, corte limpio al terminar
+          - CERO subtítulos automáticos de YouTube y CERO icono de fin/reproducción
       ======================================================== */}
-      {/* ========================================================
-          SCENE 3: SELECTOR DE CLIPS DE MOMENTOS POLÉMICOS
-          - Secuencia acotada estrictamente a scene3Start (CERO fuga de audio en Escena 2 ni 4)
-          - Al terminar cada momento o la escena, el sonido del influencer se apaga de inmediato
-      ======================================================== */}
-      <Sequence from={scene3Start} durationInFrames={scene3DurationFrames}>
+      <Sequence from={Math.max(0, scene3Start - 35)} durationInFrames={scene3DurationFrames + 35}>
         {(() => {
-          const s3Frame = frame - scene3Start;
+          const isScene3Active = frame >= scene3Start;
+          const s3Frame = isScene3Active ? frame - scene3Start : 0;
 
           // Determinar clip activo y tiempo local de forma matemática y continua
           let accumulatedFrames = 0;
@@ -622,14 +652,14 @@ export const FoodieStoryboardVideo = ({
           const currentClipFrame = s3Frame - clipStartLocal;
 
           // Transición suave de entrada a Escena 3 desde Escena 2 (CERO pantalla negra)
-          const isScene3Entering = s3Frame < 8;
+          const isScene3Entering = isScene3Active && s3Frame < 8;
           const scene3EnterScale = isScene3Entering
             ? interpolate(s3Frame, [0, 8], [1.04, 1.0], { extrapolateRight: 'clamp' })
             : 1.0;
 
           // Micro-transiciones entre clips individuales (solo entre clips intermedios)
-          const isClipExiting = currentClipFrame >= clipDuration - 4 && currentClipIndex < clips.length - 1;
-          const isClipEntering = currentClipFrame < 4 && currentClipIndex > 0;
+          const isClipExiting = isScene3Active && currentClipFrame >= clipDuration - 4 && currentClipIndex < clips.length - 1;
+          const isClipEntering = isScene3Active && currentClipFrame < 4 && currentClipIndex > 0;
 
           let glitchX = 0;
           let glitchY = 0;
@@ -658,8 +688,11 @@ export const FoodieStoryboardVideo = ({
           return (
             <AbsoluteFill
               style={{
-                backgroundColor: '#09090B',
+                backgroundColor: isScene3Active ? '#09090B' : 'transparent',
                 overflow: 'hidden',
+                opacity: isScene3Active ? 1 : 0.001,
+                pointerEvents: isScene3Active ? 'auto' : 'none',
+                zIndex: isScene3Active ? 25 : 1,
               }}
             >
               {/* Fondo ambiental envolvente dinámico (sin destellos vacíos) */}
@@ -724,35 +757,15 @@ export const FoodieStoryboardVideo = ({
                     position: 'absolute',
                     inset: 0,
                     background: 'linear-gradient(180deg, #18181B 0%, #09090B 100%)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
                     zIndex: 1,
                   }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      padding: '10px 20px',
-                      borderRadius: '999px',
-                    }}
-                  >
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#EF4444' }} />
-                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#F87171', letterSpacing: '1px' }}>
-                      AUDITORÍA EN VIVO · FOODIEFAKE
-                    </span>
-                  </div>
-                </div>
+                />
 
-                {/* Capa de reproducción: Solo el clip activo montado para que al terminar el Momento 1 su sonido se CORTE de inmediato */}
+                {/* Capa de reproducción: Transición 100% fluida con pre-buffer silencioso */}
                 {clips.map((clip, idx) => {
-                  const isCurrent = idx === currentClipIndex;
-                  if (!isCurrent) return null;
+                  const isCurrent = isScene3Active && idx === currentClipIndex;
+                  const shouldRender = (!isScene3Active && idx === 0) || (idx <= currentClipIndex + 1);
+                  if (!shouldRender) return null;
 
                   return (
                     <div
@@ -762,22 +775,25 @@ export const FoodieStoryboardVideo = ({
                         inset: 0,
                         width: '100%',
                         height: '100%',
-                        zIndex: 10,
+                        opacity: isCurrent ? 1 : 0,
+                        pointerEvents: isCurrent ? 'auto' : 'none',
+                        zIndex: isCurrent ? 10 : 2,
+                        transition: 'opacity 0.2s ease-in-out',
+                        willChange: 'opacity',
                       }}
                     >
                       {videoId ? (
-                        <iframe
+                        <YouTubeClipPlayer
                           key={`polemic-yt-${idx}-${clip.id || idx}-${clip.startTime}-${videoId}`}
-                          src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(clip.startTime || 0)}&autoplay=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&iv_load_policy=3`}
+                          videoId={videoId}
+                          startTime={clip.startTime || 0}
+                          isMuted={!isCurrent}
                           title={clip.title}
-                          allow="autoplay; encrypted-media; picture-in-picture"
                           style={{
                             position: 'absolute',
                             inset: 0,
                             width: '100%',
                             height: '100%',
-                            border: 'none',
-                            objectFit: 'cover',
                           }}
                         />
                       ) : resolvedVideoSrc ? (
@@ -785,7 +801,7 @@ export const FoodieStoryboardVideo = ({
                           src={resolvedVideoSrc}
                           startFrom={Math.round((clip.startTime || 0) * fps)}
                           endAt={Math.round(((clip.startTime || 0) + (clip.duration || 3)) * fps)}
-                          volume={1}
+                          volume={isCurrent ? 1 : 0}
                           style={{
                             position: 'absolute',
                             inset: 0,
@@ -799,13 +815,13 @@ export const FoodieStoryboardVideo = ({
                   );
                 })}
 
-                {/* Sombra degradada para formato vertical */}
+                {/* Sombra degradada para formato vertical que protege subtítulos y da acabado cinematográfico */}
                 {isVertical && (
                   <div
                     style={{
                       position: 'absolute',
                       inset: 0,
-                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.05) 25%, rgba(0,0,0,0.15) 70%, rgba(0,0,0,0.92) 100%)',
+                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.02) 25%, rgba(0,0,0,0.05) 70%, rgba(0,0,0,0.92) 100%)',
                       pointerEvents: 'none',
                       zIndex: 15,
                     }}
@@ -1070,26 +1086,6 @@ export const FoodieStoryboardVideo = ({
                     </div>
                   </div>
                 </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    background: '#DC2626',
-                    color: '#FFFFFF',
-                    padding: '12px 20px',
-                    borderRadius: '16px',
-                    fontWeight: 900,
-                    fontSize: '17px',
-                    boxShadow: '0 8px 24px rgba(220, 38, 38, 0.5)',
-                  }}
-                >
-                  <Layers size={18} />
-                  <span>
-                    {reviewsToDisplay.filter((_, i) => sceneFrame >= enterDelays[i]).length} / {reviewsToDisplay.length}
-                  </span>
-                </div>
               </div>
 
               {/* STACKED REVIEWS CONTAINER with TIKTOK ZOOM-IN / UNDERLINE / ZOOM-OUT RHYTHM */}
@@ -1180,53 +1176,6 @@ export const FoodieStoryboardVideo = ({
                   </div>
                 );
               })}
-
-              {/* FINAL IMPACT VERDICT STAMP (Slam down when all 4 reviews have stacked) */}
-              {sceneFrame >= 116 && (() => {
-                const stampSpring = spring({
-                  frame: sceneFrame - 116,
-                  fps,
-                  config: { damping: 9, mass: 0.7, stiffness: 140 },
-                });
-
-                return (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: '50px',
-                      left: '40px',
-                      right: '40px',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      zIndex: 70,
-                      transform: `scale(${stampSpring})`,
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: 'linear-gradient(135deg, #DC2626, #991B1B)',
-                        border: '3px solid #FFFFFF',
-                        borderRadius: '22px',
-                        padding: '16px 36px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '16px',
-                        boxShadow: '0 20px 50px rgba(220, 38, 38, 0.9), 0 0 30px rgba(0, 0, 0, 0.8)',
-                      }}
-                    >
-                      <AlertTriangle size={32} color="#FDE047" />
-                      <div>
-                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#FDE047', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                          💥 SENTENCIA DE COMENSALES REALES
-                        </div>
-                        <div style={{ fontSize: '26px', fontWeight: 900, color: '#FFFFFF' }}>
-                          ÍNDICE DE COHERENCIA: <span style={{ color: '#FDE047' }}>{coherenceIndex}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
             </AbsoluteFill>
           );
         })()}
