@@ -1,0 +1,6 @@
+{
+  "name": "Social Hate Analyzer",
+  "description": "Herramienta serverless para análisis de odio y toxicidad en redes sociales con Gemini y Supabase sin backend dedicado",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
